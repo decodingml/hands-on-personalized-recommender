@@ -1,7 +1,7 @@
 import os
+import hopsworks
 
 from hsml.transformer import Transformer
-
 from recsys.config import settings
 
 
@@ -18,7 +18,12 @@ class HopsworksLLMRankingModel:
         ranking_model.save(local_model_path)
 
     @classmethod
-    def deploy(cls, project):
+    def deploy(cls):
+        # Prepare secrets used in the deployment
+        cls._prepare_secrets()
+
+        project = hopsworks.login()
+        cls._prepare_environment(project)
         mr = project.get_model_registry()
         dataset_api = project.get_dataset_api()
 
@@ -71,3 +76,42 @@ class HopsworksLLMRankingModel:
         )
 
         return ranking_deployment
+
+    @classmethod
+    def _prepare_environment(cls, project):
+        # Upload requirements file to Hopsworks
+        dataset_api = project.get_dataset_api()
+
+        requirements_path = dataset_api.upload(
+            str(settings.RECSYS_DIR / "hopsworks_integration" / "llm_ranker" / "requirements.txt"),
+            "Resources",
+            overwrite=True,
+        )
+
+        # Install the extra requirements in the Python environment on Hopsworks
+        env_api = project.get_environment_api()
+        env = env_api.get_environments()[0]
+        print(env)
+        env.install_requirements(requirements_path)
+    @classmethod
+    def _prepare_secrets(cls):
+        connection = hopsworks.connection(host="c.app.hopsworks.ai",
+                                          hostname_verification=False,
+                                          port=443,
+                                          api_key_value=settings.HOPSWORKS_API_KEY.get_secret_value()
+                                          )
+        if not settings.OPENAI_API_KEY:
+            raise ValueError(
+                "Missing required secret: 'OPENAI_API_KEY'. Please ensure it is set in the .env file or config.py "
+                "settings.")
+
+        secrets_api = connection.get_secrets_api()
+        secrets = secrets_api.get_secrets()
+        existing_secret_keys = [secret.name for secret in secrets]
+        # Create the OPENAI_API_KEY secret if it doesn't exist
+        if "OPENAI_API_KEY" not in existing_secret_keys:
+            secrets_api.create_secret(
+                "OPENAI_API_KEY",
+                settings.OPENAI_API_KEY.get_secret_value(),
+                project=settings.HOPSWORKS_PROJECT
+            )

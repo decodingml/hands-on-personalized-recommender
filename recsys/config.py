@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     RANKING_EARLY_STOPPING_ROUNDS: int = 5
 
     # Inference
-    RANKING_MODEL_TYPE: str = "llmranking"
+    RANKING_MODEL_TYPE: str = "ranking"
 
 
 settings = Settings()
